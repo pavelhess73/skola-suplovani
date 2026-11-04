@@ -14,7 +14,11 @@ import {
   Pencil,
   Trash2,
   AlertTriangle,
-  CheckCircle2
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
+  Layers
 } from 'lucide-react';
 import { formatIsoToCzech } from '../utils/dateUtils';
 import EditAbsenceModal from './EditAbsenceModal';
@@ -70,23 +74,78 @@ function getReasonBadgeStyle(reason = '') {
 export default function AbsencesView({ absences = [], absenceSummary = {}, onAbsenceUpdated }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedReason, setSelectedReason] = useState('ALL'); // 'ALL' or specific reason
+  const [expandedTeachers, setExpandedTeachers] = useState({}); // { [teacherName]: boolean }
   const [editingAbsence, setEditingAbsence] = useState(null);
   const [deletingAbsence, setDeletingAbsence] = useState(null);
   const [actionNotice, setActionNotice] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const byReason = absenceSummary.byReason || [];
-  const byTeacher = absenceSummary.byTeacher || [];
   const totalAbsences = absences.length;
 
-  // Filtered absences list
-  const filteredAbsences = useMemo(() => {
-    return absences.filter((a) => {
-      const matchSearch = a.teacher_name.toLowerCase().includes(searchTerm.toLowerCase().trim());
-      const matchReason = selectedReason === 'ALL' || a.reason === selectedReason;
-      return matchSearch && matchReason;
+  // Toggle expanding a single teacher card
+  const toggleTeacher = (teacherName) => {
+    setExpandedTeachers((prev) => ({
+      ...prev,
+      [teacherName]: !prev[teacherName],
+    }));
+  };
+
+  // Group absences by teacher
+  const groupedTeachers = useMemo(() => {
+    const map = {};
+
+    absences.forEach((record) => {
+      const name = record.teacher_name;
+      if (!map[name]) {
+        map[name] = {
+          teacher_name: name,
+          absences: [],
+          reasonCounts: {},
+          totalCount: 0,
+        };
+      }
+      map[name].absences.push(record);
+      map[name].totalCount += 1;
+      map[name].reasonCounts[record.reason] = (map[name].reasonCounts[record.reason] || 0) + 1;
     });
+
+    let list = Object.values(map);
+
+    // Filter by search term
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase().trim();
+      list = list.filter((t) => t.teacher_name.toLowerCase().includes(term));
+    }
+
+    // Filter by active reason tile
+    if (selectedReason !== 'ALL') {
+      list = list.filter((t) => !!t.reasonCounts[selectedReason]);
+    }
+
+    // Sort: most absences first, then by name
+    list.sort((a, b) => {
+      if (b.totalCount !== a.totalCount) return b.totalCount - a.totalCount;
+      return a.teacher_name.localeCompare(b.teacher_name, 'cs');
+    });
+
+    return list;
   }, [absences, searchTerm, selectedReason]);
+
+  // Expand / collapse all toggle
+  const allExpanded = useMemo(() => {
+    if (groupedTeachers.length === 0) return false;
+    return groupedTeachers.every((t) => !!expandedTeachers[t.teacher_name]);
+  }, [groupedTeachers, expandedTeachers]);
+
+  const toggleAll = () => {
+    const nextState = !allExpanded;
+    const update = {};
+    groupedTeachers.forEach((t) => {
+      update[t.teacher_name] = nextState;
+    });
+    setExpandedTeachers(update);
+  };
 
   // Top reason
   const topReason = byReason.length > 0 ? byReason[0].reason : '-';
@@ -127,7 +186,7 @@ export default function AbsencesView({ absences = [], absenceSummary = {}, onAbs
 
   return (
     <div className="space-y-6">
-      {/* Notice alert */}
+      {/* Action Notice Toast */}
       {actionNotice && (
         <div
           className={`p-4 rounded-xl flex items-center gap-2.5 text-sm animate-fade-in ${
@@ -145,7 +204,7 @@ export default function AbsencesView({ absences = [], absenceSummary = {}, onAbs
         </div>
       )}
 
-      {/* KPI Cards */}
+      {/* KPI Cards Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {/* Card 1: Total absences */}
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex items-center gap-4">
@@ -165,7 +224,7 @@ export default function AbsencesView({ absences = [], absenceSummary = {}, onAbs
           </div>
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Chybějících pedagogů</p>
-            <p className="text-2xl font-black text-blue-900 mt-0.5">{byTeacher.length}</p>
+            <p className="text-2xl font-black text-blue-900 mt-0.5">{Object.keys(groupedTeachers).length}</p>
           </div>
         </div>
 
@@ -183,20 +242,25 @@ export default function AbsencesView({ absences = [], absenceSummary = {}, onAbs
         </div>
       </div>
 
-      {/* Breakdown by Reasons (Cards with visual bars) */}
-      <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
-        <div className="flex items-center justify-between">
+      {/* 1. Horní souhrnné dlaždice důvodů jako aktivní filtr */}
+      <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-brand-600" />
-            <h3 className="text-base font-bold text-slate-900">Rozpad absencí podle důvodů</h3>
+            <h3 className="text-sm font-bold text-slate-900">
+              Filtrovat podle důvodu absence:
+            </h3>
+            <span className="text-xs text-slate-500 hidden sm:inline">
+              (kliknutím zapnete/vypnete filtr)
+            </span>
           </div>
           {selectedReason !== 'ALL' && (
             <button
               type="button"
               onClick={() => setSelectedReason('ALL')}
-              className="text-xs font-semibold text-brand-600 hover:text-brand-800"
+              className="text-xs font-semibold text-brand-600 hover:text-brand-800 self-start sm:self-auto bg-brand-50 px-2.5 py-1 rounded-lg border border-brand-200/80 transition-colors"
             >
-              Zrušit filtr ({selectedReason})
+              ✕ Zrušit filtr ({selectedReason})
             </button>
           )}
         </div>
@@ -212,145 +276,255 @@ export default function AbsencesView({ absences = [], absenceSummary = {}, onAbs
               const percent = totalAbsences > 0 ? Math.round((item.count / totalAbsences) * 100) : 0;
 
               return (
-                <div
+                <button
+                  type="button"
                   key={item.reason}
                   onClick={() => setSelectedReason(isSelected ? 'ALL' : item.reason)}
-                  className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
+                  className={`p-3 rounded-xl border text-left transition-all ${
                     isSelected
-                      ? 'border-brand-500 bg-brand-50/50 shadow-xs ring-2 ring-brand-500/20'
-                      : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/60'
+                      ? 'border-brand-600 bg-brand-50/70 shadow-sm ring-2 ring-brand-500/30'
+                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/80'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-2 font-semibold text-xs sm:text-sm text-slate-900 truncate">
-                      <Icon className="w-4 h-4 text-slate-500 shrink-0" />
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${style.dot}`} />
+                      <Icon className="w-4 h-4 text-slate-600 shrink-0" />
                       <span className="truncate" title={item.reason}>{item.reason}</span>
                     </span>
-                    <span className="text-sm font-black text-slate-900 px-2 py-0.5 rounded-md bg-slate-100">
+                    <span
+                      className={`text-xs font-black px-2 py-0.5 rounded-md ${
+                        isSelected ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-900'
+                      }`}
+                    >
                       {item.count}×
                     </span>
                   </div>
 
-                  {/* Percentage bar */}
+                  {/* Visual percentage bar */}
                   <div className="mt-2.5">
                     <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
                       <div
-                        className="bg-brand-500 h-1.5 rounded-full transition-all"
+                        className={`h-1.5 rounded-full transition-all ${
+                          isSelected ? 'bg-brand-600' : 'bg-brand-500'
+                        }`}
                         style={{ width: `${percent}%` }}
                       />
                     </div>
                     <div className="text-[10px] text-slate-400 text-right mt-1 font-mono">
-                      {percent}%
+                      {percent}% z celku
                     </div>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
         )}
       </div>
 
-      {/* Main Table Card: Detailed Absences */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        {/* Header with Search */}
-        <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      {/* 2. & 3. Mřížka karet učitelů s rozklikávacím akordeonem */}
+      <div className="space-y-4">
+        {/* Controls Bar: Search & Expand All */}
+        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-2">
-            <UserX className="w-4 h-4 text-purple-600" />
-            <h3 className="text-base font-bold text-slate-900">Seznam absencí v období</h3>
-            <span className="text-xs text-slate-500">({filteredAbsences.length} záznamů)</span>
+            <Users className="w-5 h-5 text-purple-600" />
+            <h3 className="text-base font-bold text-slate-900">
+              Přehled chybějících pedagogů
+            </h3>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+              {groupedTeachers.length} vyučujících
+            </span>
           </div>
 
-          <div className="relative max-w-xs w-full">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Hledat učitele..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-sm rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
-            />
+          <div className="flex items-center gap-3">
+            {/* Search Input */}
+            <div className="relative flex-1 sm:w-64">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Hledat učitele..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 text-sm rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+              />
+            </div>
+
+            {/* Expand / Collapse all button */}
+            {groupedTeachers.length > 0 && (
+              <button
+                type="button"
+                onClick={toggleAll}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors whitespace-nowrap shrink-0"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>{allExpanded ? 'Sbalit vše' : 'Rozbalit vše'}</span>
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-slate-700 text-xs uppercase font-bold tracking-wider border-b border-slate-200">
-              <tr>
-                <th className="py-3.5 px-4 sm:px-6">Datum</th>
-                <th className="py-3.5 px-4">Chybějící vyučující</th>
-                <th className="py-3.5 px-4">Důvod absence</th>
-                <th className="py-3.5 px-4">Kdy / Rozsah</th>
-                <th className="py-3.5 px-4 text-right">Akce</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredAbsences.length === 0 ? (
-                <tr>
-                  <td colSpan="5" className="py-12 text-center text-slate-400 text-sm">
-                    {absences.length === 0
-                      ? 'Pro vybrané období nebyly nalezeny žádné záznamy o absencích.'
-                      : 'Žádná absence neodpovídá zvolenému filtru.'}
-                  </td>
-                </tr>
-              ) : (
-                filteredAbsences.map((item, idx) => {
-                  const style = getReasonBadgeStyle(item.reason);
-                  const Icon = style.icon;
+        {/* Empty state */}
+        {groupedTeachers.length === 0 ? (
+          <div className="bg-white rounded-2xl p-12 border border-slate-200 text-center text-slate-400">
+            <UserX className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+            <p className="text-sm font-medium">
+              {absences.length === 0
+                ? 'Pro vybrané období nebyly nalezeny žádné záznamy o absencích.'
+                : 'Žádný vyučující neodpovídá zvolenému filtru nebo hledání.'}
+            </p>
+          </div>
+        ) : (
+          /* Cards Grid */
+          <div className="grid grid-cols-1 gap-3.5">
+            {groupedTeachers.map((teacher) => {
+              const isExpanded = !!expandedTeachers[teacher.teacher_name];
 
-                  return (
-                    <tr key={item.id || idx} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="py-3 px-4 sm:px-6 whitespace-nowrap font-medium text-slate-900">
-                        <span className="flex items-center gap-1.5">
-                          <Calendar className="w-3.5 h-3.5 text-brand-600" />
-                          {formatIsoToCzech(item.date)}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 font-bold text-slate-900">
-                        {item.teacher_name}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${style.bg}`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
-                          <Icon className="w-3.5 h-3.5" />
-                          <span>{item.reason}</span>
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-slate-600">
-                        <span className="flex items-center gap-1 text-xs">
-                          <Clock className="w-3.5 h-3.5 text-slate-400" />
-                          {item.time_range}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setEditingAbsence(item)}
-                            title="Upravit záznam absence"
-                            className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDeletingAbsence(item)}
-                            title="Smazat záznam absence"
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+              return (
+                <div
+                  key={teacher.teacher_name}
+                  className={`bg-white rounded-2xl border transition-all overflow-hidden ${
+                    isExpanded
+                      ? 'border-brand-300 shadow-md ring-1 ring-brand-500/20'
+                      : 'border-slate-200 shadow-xs hover:border-slate-300 hover:shadow-sm'
+                  }`}
+                >
+                  {/* Card Header (Clickable Accordion Trigger) */}
+                  <div
+                    onClick={() => toggleTeacher(teacher.teacher_name)}
+                    className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 cursor-pointer select-none bg-white hover:bg-slate-50/50 transition-colors"
+                  >
+                    {/* Left: Avatar & Teacher Name */}
+                    <div className="flex items-center gap-3.5">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-500 to-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
+                        {teacher.teacher_name.charAt(0)}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-base text-slate-900 tracking-tight">
+                            {teacher.teacher_name}
+                          </h4>
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                            {teacher.totalCount}{' '}
+                            {teacher.totalCount === 1
+                              ? 'absence'
+                              : teacher.totalCount < 5
+                              ? 'absence'
+                              : 'absencí'}
+                          </span>
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+
+                        {/* Badges of reasons with counts */}
+                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                          {Object.entries(teacher.reasonCounts).map(([reason, count]) => {
+                            const badgeStyle = getReasonBadgeStyle(reason);
+                            const Icon = badgeStyle.icon;
+
+                            return (
+                              <span
+                                key={reason}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${badgeStyle.bg}`}
+                              >
+                                <span className={`w-1.5 h-1.5 rounded-full ${badgeStyle.dot}`} />
+                                <Icon className="w-3 h-3" />
+                                <span>{reason}</span>
+                                <span className="font-bold ml-0.5">{count}×</span>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: Expand / Collapse Button */}
+                    <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                      <span className="text-xs font-semibold text-slate-500 sm:hidden">
+                        {isExpanded ? 'Skrýt podrobnosti' : 'Zobrazit podrobnosti'}
+                      </span>
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-transform duration-200 ${
+                          isExpanded
+                            ? 'bg-brand-100 text-brand-700 rotate-180'
+                            : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                        }`}
+                      >
+                        <ChevronDown className="w-4 h-4" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Accordion Detail: List of Individual Absences */}
+                  {isExpanded && (
+                    <div className="border-t border-slate-100 bg-slate-50/60 p-4 sm:p-5 space-y-2.5 animate-fade-in">
+                      <div className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                        Rozpis jednotlivých absencí v období:
+                      </div>
+
+                      <div className="space-y-2">
+                        {teacher.absences.map((item) => {
+                          const badgeStyle = getReasonBadgeStyle(item.reason);
+                          const Icon = badgeStyle.icon;
+
+                          return (
+                            <div
+                              key={item.id}
+                              className="bg-white rounded-xl p-3 sm:p-3.5 border border-slate-200/90 shadow-2xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 hover:border-slate-300 transition-colors"
+                            >
+                              {/* Date & Time range */}
+                              <div className="flex flex-wrap items-center gap-3 text-sm">
+                                <span className="inline-flex items-center gap-1.5 font-bold text-slate-900">
+                                  <Calendar className="w-4 h-4 text-brand-600" />
+                                  {formatIsoToCzech(item.date)}
+                                </span>
+
+                                <span className="text-slate-300 hidden sm:inline">•</span>
+
+                                <span className="inline-flex items-center gap-1 text-slate-600 text-xs sm:text-sm">
+                                  <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                  Rozsah: <strong className="text-slate-800 ml-1">{item.time_range}</strong>
+                                </span>
+                              </div>
+
+                              {/* Reason Badge & Actions */}
+                              <div className="flex items-center justify-between sm:justify-end gap-3">
+                                <span
+                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${badgeStyle.bg}`}
+                                >
+                                  <span className={`w-1.5 h-1.5 rounded-full ${badgeStyle.dot}`} />
+                                  <Icon className="w-3.5 h-3.5" />
+                                  <span>{item.reason}</span>
+                                </span>
+
+                                {/* Action buttons: Edit & Delete */}
+                                <div className="flex items-center gap-1 border-l border-slate-200 pl-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingAbsence(item)}
+                                    title="Upravit záznam absence"
+                                    className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeletingAbsence(item)}
+                                    title="Smazat záznam absence"
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Edit Modal Dialog */}
