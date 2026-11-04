@@ -383,6 +383,100 @@ export async function updateAbsence(id, updatedFields) {
   }
 }
 
+export async function updateSubstitutionRecord(id, updatedFields) {
+  const token = getAuthToken();
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  try {
+    const response = await fetch('/api/records', {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ id, ...updatedFields }),
+    });
+
+    if (response.status === 401) {
+      clearAuthToken();
+      const err = new Error('Platnost přihlášení vypršela. Přihlaste se prosím znovu.');
+      err.isAuthError = true;
+      throw err;
+    }
+
+    if (response.ok) {
+      return await response.json();
+    }
+
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error || `Chyba při úpravě záznamu (${response.status})`);
+  } catch (err) {
+    if (err.isAuthError) throw err;
+    console.warn('Backend /api/records PUT failed, updating local storage:', err.message);
+
+    const all = getLocalRecords();
+    let updatedRecord = null;
+    const nextRecords = all.map((r) => {
+      if (r.id === id) {
+        updatedRecord = { ...r, ...updatedFields };
+        return updatedRecord;
+      }
+      return r;
+    });
+
+    saveLocalRecords(nextRecords);
+    return {
+      success: true,
+      message: 'Záznam byl upraven (lokální režim).',
+      record: updatedRecord,
+      isLocalFallback: true,
+    };
+  }
+}
+
+export async function deleteSubstitutionRecord(id) {
+  const token = getAuthToken();
+  const headers = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  try {
+    const response = await fetch(`/api/records?id=${id}`, {
+      method: 'DELETE',
+      headers,
+    });
+
+    if (response.status === 401) {
+      clearAuthToken();
+      const err = new Error('Platnost přihlášení vypršela. Přihlaste se prosím znovu.');
+      err.isAuthError = true;
+      throw err;
+    }
+
+    if (response.ok) {
+      return await response.json();
+    }
+
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error || `Chyba při mazání záznamu (${response.status})`);
+  } catch (err) {
+    if (err.isAuthError) throw err;
+    console.warn('Backend /api/records DELETE failed, removing from local storage:', err.message);
+
+    const all = getLocalRecords();
+    const nextRecords = all.filter((r) => r.id !== id);
+    saveLocalRecords(nextRecords);
+
+    return {
+      success: true,
+      message: 'Záznam byl smazán (lokální režim).',
+      id,
+      isLocalFallback: true,
+    };
+  }
+}
+
 export async function deleteAbsence(id) {
   const token = getAuthToken();
   const headers = {};

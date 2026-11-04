@@ -203,6 +203,7 @@ export default function App() {
           teacherName={selectedTeacher}
           records={data.records}
           onClose={() => setSelectedTeacher(null)}
+          onRecordUpdated={() => loadStats()}
         />
       )}
 
