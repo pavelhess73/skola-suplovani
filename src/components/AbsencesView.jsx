@@ -10,10 +10,15 @@ import {
   Filter, 
   Baby, 
   Briefcase, 
-  Sparkles,
-  Clock
+  Clock,
+  Pencil,
+  Trash2,
+  AlertTriangle,
+  CheckCircle2
 } from 'lucide-react';
 import { formatIsoToCzech } from '../utils/dateUtils';
+import EditAbsenceModal from './EditAbsenceModal';
+import { updateAbsence, deleteAbsence } from '../services/api';
 
 /**
  * Returns icon and badge styling for common Czech absence reasons
@@ -48,7 +53,7 @@ function getReasonBadgeStyle(reason = '') {
       icon: Baby,
     };
   }
-  if (norm.includes('dovolená') || norm.includes('dovolena')) {
+  if (norm.includes('dovolená') || norm.includes('dovolena') || norm.includes('volno')) {
     return {
       bg: 'bg-amber-50 text-amber-800 border-amber-200',
       dot: 'bg-amber-500',
@@ -62,9 +67,13 @@ function getReasonBadgeStyle(reason = '') {
   };
 }
 
-export default function AbsencesView({ absences = [], absenceSummary = {}, activeRange }) {
+export default function AbsencesView({ absences = [], absenceSummary = {}, onAbsenceUpdated }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedReason, setSelectedReason] = useState('ALL'); // 'ALL' or specific reason
+  const [editingAbsence, setEditingAbsence] = useState(null);
+  const [deletingAbsence, setDeletingAbsence] = useState(null);
+  const [actionNotice, setActionNotice] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const byReason = absenceSummary.byReason || [];
   const byTeacher = absenceSummary.byTeacher || [];
@@ -82,8 +91,60 @@ export default function AbsencesView({ absences = [], absenceSummary = {}, activ
   // Top reason
   const topReason = byReason.length > 0 ? byReason[0].reason : '-';
 
+  // Handle Save Edit
+  const handleSaveEdit = async (id, updatedFields) => {
+    const res = await updateAbsence(id, updatedFields);
+    setActionNotice({
+      type: 'success',
+      text: res.message || 'Záznam byl úspěšně upraven.',
+    });
+    setTimeout(() => setActionNotice(null), 3500);
+    if (onAbsenceUpdated) onAbsenceUpdated();
+  };
+
+  // Handle Delete Record
+  const handleConfirmDelete = async () => {
+    if (!deletingAbsence) return;
+    try {
+      setIsDeleting(true);
+      await deleteAbsence(deletingAbsence.id);
+      setActionNotice({
+        type: 'success',
+        text: `Záznam absence pro ${deletingAbsence.teacher_name} byl smazán.`,
+      });
+      setTimeout(() => setActionNotice(null), 3500);
+      setDeletingAbsence(null);
+      if (onAbsenceUpdated) onAbsenceUpdated();
+    } catch (err) {
+      setActionNotice({
+        type: 'error',
+        text: err.message || 'Chyba při mazání záznamu.',
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {/* Notice alert */}
+      {actionNotice && (
+        <div
+          className={`p-4 rounded-xl flex items-center gap-2.5 text-sm animate-fade-in ${
+            actionNotice.type === 'success'
+              ? 'bg-emerald-50 border border-emerald-200 text-emerald-900'
+              : 'bg-rose-50 border border-rose-200 text-rose-900'
+          }`}
+        >
+          {actionNotice.type === 'success' ? (
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+          ) : (
+            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+          )}
+          <span>{actionNotice.text}</span>
+        </div>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {/* Card 1: Total absences */}
@@ -220,12 +281,13 @@ export default function AbsencesView({ absences = [], absenceSummary = {}, activ
                 <th className="py-3.5 px-4">Chybějící vyučující</th>
                 <th className="py-3.5 px-4">Důvod absence</th>
                 <th className="py-3.5 px-4">Kdy / Rozsah</th>
+                <th className="py-3.5 px-4 text-right">Akce</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredAbsences.length === 0 ? (
                 <tr>
-                  <td colSpan="4" className="py-12 text-center text-slate-400 text-sm">
+                  <td colSpan="5" className="py-12 text-center text-slate-400 text-sm">
                     {absences.length === 0
                       ? 'Pro vybrané období nebyly nalezeny žádné záznamy o absencích.'
                       : 'Žádná absence neodpovídá zvolenému filtru.'}
@@ -262,6 +324,26 @@ export default function AbsencesView({ absences = [], absenceSummary = {}, activ
                           {item.time_range}
                         </span>
                       </td>
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setEditingAbsence(item)}
+                            title="Upravit záznam absence"
+                            className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeletingAbsence(item)}
+                            title="Smazat záznam absence"
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })
@@ -270,7 +352,61 @@ export default function AbsencesView({ absences = [], absenceSummary = {}, activ
           </table>
         </div>
       </div>
+
+      {/* Edit Modal Dialog */}
+      {editingAbsence && (
+        <EditAbsenceModal
+          absence={editingAbsence}
+          onSave={handleSaveEdit}
+          onClose={() => setEditingAbsence(null)}
+        />
+      )}
+
+      {/* Quick Deletion Confirmation Dialog */}
+      {deletingAbsence && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1.5">
+              <h3 className="text-lg font-bold text-slate-900">Smazat záznam absence?</h3>
+              <p className="text-sm text-slate-500">
+                Opravdu chcete smazat záznam pro vyučujícího{' '}
+                <strong className="text-slate-800">{deletingAbsence.teacher_name}</strong> ze dne{' '}
+                <strong className="text-slate-800">{formatIsoToCzech(deletingAbsence.date)}</strong>?
+              </p>
+            </div>
+
+            <div className="pt-2 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setDeletingAbsence(null)}
+                disabled={isDeleting}
+                className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-xl transition-colors"
+              >
+                Zrušit
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold rounded-xl shadow-md shadow-rose-600/20 transition-all disabled:opacity-50 flex items-center gap-2"
+              >
+                {isDeleting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Mažu...</span>
+                  </>
+                ) : (
+                  <span>Ano, smazat</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

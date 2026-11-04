@@ -182,6 +182,7 @@ export default function App() {
                 absences={data.absences}
                 absenceSummary={data.absenceSummary}
                 activeRange={activeRange}
+                onAbsenceUpdated={() => loadStats()}
               />
             )}
           </div>

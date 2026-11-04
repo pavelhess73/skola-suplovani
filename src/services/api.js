@@ -332,6 +332,100 @@ export async function uploadRecords(date, records, absences = []) {
   }
 }
 
+export async function updateAbsence(id, updatedFields) {
+  const token = getAuthToken();
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  try {
+    const response = await fetch('/api/absences', {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ id, ...updatedFields }),
+    });
+
+    if (response.status === 401) {
+      clearAuthToken();
+      const err = new Error('Platnost přihlášení vypršela. Přihlaste se prosím znovu.');
+      err.isAuthError = true;
+      throw err;
+    }
+
+    if (response.ok) {
+      return await response.json();
+    }
+
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error || `Chyba při úpravě absence (${response.status})`);
+  } catch (err) {
+    if (err.isAuthError) throw err;
+    console.warn('Backend /api/absences PUT failed, updating local storage:', err.message);
+
+    const all = getLocalAbsences();
+    let updatedRecord = null;
+    const nextAbsences = all.map((a) => {
+      if (a.id === id) {
+        updatedRecord = { ...a, ...updatedFields };
+        return updatedRecord;
+      }
+      return a;
+    });
+
+    saveLocalAbsences(nextAbsences);
+    return {
+      success: true,
+      message: 'Záznam byl upraven (lokální režim).',
+      record: updatedRecord,
+      isLocalFallback: true,
+    };
+  }
+}
+
+export async function deleteAbsence(id) {
+  const token = getAuthToken();
+  const headers = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  try {
+    const response = await fetch(`/api/absences?id=${id}`, {
+      method: 'DELETE',
+      headers,
+    });
+
+    if (response.status === 401) {
+      clearAuthToken();
+      const err = new Error('Platnost přihlášení vypršela. Přihlaste se prosím znovu.');
+      err.isAuthError = true;
+      throw err;
+    }
+
+    if (response.ok) {
+      return await response.json();
+    }
+
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error || `Chyba při mazání absence (${response.status})`);
+  } catch (err) {
+    if (err.isAuthError) throw err;
+    console.warn('Backend /api/absences DELETE failed, removing from local storage:', err.message);
+
+    const all = getLocalAbsences();
+    const nextAbsences = all.filter((a) => a.id !== id);
+    saveLocalAbsences(nextAbsences);
+
+    return {
+      success: true,
+      message: 'Záznam byl smazán (lokální režim).',
+      id,
+      isLocalFallback: true,
+    };
+  }
+}
+
 function getLocalStatsMock(startDate, endDate) {
   const allRecords = getLocalRecords();
   const filteredRecords = allRecords.filter((r) => r.date >= startDate && r.date <= endDate);
