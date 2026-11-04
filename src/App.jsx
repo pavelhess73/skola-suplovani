@@ -4,11 +4,13 @@ import PeriodSelector from './components/PeriodSelector';
 import StatsTable from './components/StatsTable';
 import FileUpload from './components/FileUpload';
 import TeacherDetailModal from './components/TeacherDetailModal';
-import { fetchStats } from './services/api';
+import LoginScreen from './components/LoginScreen';
+import { fetchStats, getAuthToken, clearAuthToken } from './services/api';
 import { getThisWeekRange } from './utils/dateUtils';
 import { AlertCircle } from 'lucide-react';
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => !!getAuthToken());
   const [activeTab, setActiveTab] = useState('stats'); // 'stats' | 'upload'
   const [activeRange, setActiveRange] = useState(getThisWeekRange());
   const [loading, setLoading] = useState(false);
@@ -53,6 +55,10 @@ export default function App() {
           setError(res.error || 'Nepodařilo se načíst statistiky.');
         }
       } catch (err) {
+        if (err.isAuthError) {
+          setIsAuthenticated(false);
+          return;
+        }
         setError(err.message || 'Chyba při komunikaci se serverem.');
       } finally {
         setLoading(false);
@@ -61,19 +67,35 @@ export default function App() {
     [activeRange]
   );
 
-  // Trigger load whenever activeRange changes
+  // Trigger load whenever activeRange changes and user is authenticated
   useEffect(() => {
-    loadStats(activeRange);
-  }, [activeRange, loadStats]);
+    if (isAuthenticated) {
+      loadStats(activeRange);
+    }
+  }, [isAuthenticated, activeRange, loadStats]);
+
+  const handleLoginSuccess = () => {
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    clearAuthToken();
+    setIsAuthenticated(false);
+    setSelectedTeacher(null);
+  };
 
   const handleRangeChange = (newRange) => {
     setActiveRange(newRange);
   };
 
-  const handleUploadSuccess = (uploadedDate) => {
-    // If the uploaded date is outside current range, optionally we can keep range or refresh
+  const handleUploadSuccess = () => {
     loadStats();
   };
+
+  // If user is not authenticated, show login screen
+  if (!isAuthenticated) {
+    return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-900 font-sans antialiased flex flex-col">
@@ -82,6 +104,7 @@ export default function App() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onRefresh={() => loadStats()}
+        onLogout={handleLogout}
         loading={loading}
       />
 
@@ -149,10 +172,9 @@ export default function App() {
       {/* Footer */}
       <footer className="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4">
-          Evidence suplování a dozorů • Vite, React, Tailwind CSS, Cloudflare Pages & D1
+          Evidence suplování a dozorů • Chráněno heslem • Vite, React, Cloudflare Pages & D1
         </div>
       </footer>
     </div>
   );
 }
-

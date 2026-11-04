@@ -1,7 +1,7 @@
 import React from 'react';
-import { CalendarClock, Shield, BarChart2, UploadCloud, RefreshCw } from 'lucide-react';
+import { CalendarClock, BarChart2, UploadCloud, RefreshCw, LogOut } from 'lucide-react';
 
-export default function Navbar({ activeTab, onTabChange, onRefresh, loading }) {
+export default function Navbar({ activeTab, onTabChange, onRefresh, onLogout, loading }) {
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -17,6 +17,16 @@ export default function Navbar({ activeTab, onTabChange, onRefresh, loading }) {
                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-brand-50 text-brand-700 border border-brand-200">
                   Cloudflare D1
                 </span>
+                {/* Logout button directly beside title */}
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  title="Odhlásit se ze systému"
+                  className="hidden sm:inline-flex items-center gap-1.5 ml-2 px-2.5 py-1 text-xs font-semibold text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors border border-slate-200"
+                >
+                  <LogOut className="w-3.5 h-3.5 text-rose-500" />
+                  <span>Odhlásit se</span>
+                </button>
               </div>
               <p className="text-xs text-slate-500 hidden sm:block">Evidence suplování a rovnoměrnosti dozorů</p>
             </div>
@@ -61,10 +71,19 @@ export default function Navbar({ activeTab, onTabChange, onRefresh, loading }) {
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-brand-600' : ''}`} />
             </button>
+
+            {/* Mobile Logout Button */}
+            <button
+              type="button"
+              onClick={onLogout}
+              title="Odhlásit se"
+              className="sm:hidden p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+            >
+              <LogOut className="w-4 h-4 text-rose-500" />
+            </button>
           </div>
         </div>
       </div>
     </header>
   );
 }
-
