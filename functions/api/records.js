@@ -23,7 +23,7 @@ async function handleUpdate(context) {
 
   try {
     const body = await request.json();
-    const { id, type, hour_slot, subject, classroom, original_teacher, teacher_name, date } = body;
+    const { id, type, hour_slot, subject, classroom, original_teacher, teacher_name, date, is_replacement } = body;
 
     if (!id) {
       return new Response(
@@ -43,6 +43,7 @@ async function handleUpdate(context) {
     }
 
     const normType = type === 'DOZOR' ? 'DOZOR' : 'HODINA';
+    const isReplacementVal = is_replacement !== undefined ? (is_replacement ? 1 : 0) : null;
 
     const updateStmt = env.DB.prepare(`
       UPDATE substitution_records 
@@ -53,7 +54,8 @@ async function handleUpdate(context) {
         classroom = COALESCE(?, classroom),
         original_teacher = ?,
         teacher_name = COALESCE(?, teacher_name),
-        date = COALESCE(?, date)
+        date = COALESCE(?, date),
+        is_replacement = COALESCE(?, is_replacement)
       WHERE id = ?
     `).bind(
       normType,
@@ -63,6 +65,7 @@ async function handleUpdate(context) {
       original_teacher !== undefined ? (original_teacher || null) : null,
       teacher_name !== undefined ? teacher_name : null,
       date !== undefined ? date : null,
+      isReplacementVal,
       id
     );
 

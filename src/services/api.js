@@ -531,15 +531,20 @@ function getLocalStatsMock(startDate, endDate) {
         teacher_name: r.teacher_name,
         hours_count: 0,
         duties_count: 0,
+        replacements_count: 0,
         total_count: 0,
       };
     }
     if (r.type === 'DOZOR') {
       teacherMap[r.teacher_name].duties_count += 1;
+      teacherMap[r.teacher_name].total_count += 1;
+    } else if (r.is_replacement === 1) {
+      teacherMap[r.teacher_name].replacements_count += 1;
+      // Excluded from hours_count and total_count!
     } else {
       teacherMap[r.teacher_name].hours_count += 1;
+      teacherMap[r.teacher_name].total_count += 1;
     }
-    teacherMap[r.teacher_name].total_count += 1;
   });
 
   const summary = Object.values(teacherMap).sort((a, b) => {
@@ -550,9 +555,11 @@ function getLocalStatsMock(startDate, endDate) {
 
   let totalHours = 0;
   let totalDuties = 0;
+  let totalReplacements = 0;
   summary.forEach((s) => {
     totalHours += s.hours_count;
     totalDuties += s.duties_count;
+    totalReplacements += s.replacements_count || 0;
   });
 
   // Absences mock

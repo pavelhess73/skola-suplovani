@@ -39,13 +39,14 @@ export async function onRequestGet(context) {
       );
     }
 
-    // 1. Fetch teacher substitution summary
+    // 1. Fetch teacher substitution summary (excluding is_replacement = 1 from workload hours and total)
     const summaryQuery = `
       SELECT 
         teacher_name,
-        COUNT(CASE WHEN type = 'HODINA' THEN 1 END) AS hours_count,
+        COUNT(CASE WHEN type = 'HODINA' AND (is_replacement = 0 OR is_replacement IS NULL) THEN 1 END) AS hours_count,
         COUNT(CASE WHEN type = 'DOZOR' THEN 1 END) AS duties_count,
-        COUNT(*) AS total_count
+        COUNT(CASE WHEN is_replacement = 1 THEN 1 END) AS replacements_count,
+        (COUNT(CASE WHEN type = 'HODINA' AND (is_replacement = 0 OR is_replacement IS NULL) THEN 1 END) + COUNT(CASE WHEN type = 'DOZOR' THEN 1 END)) AS total_count
       FROM substitution_records
       WHERE date >= ? AND date <= ?
       GROUP BY teacher_name
@@ -66,6 +67,7 @@ export async function onRequestGet(context) {
         hour_slot,
         subject,
         classroom,
+        COALESCE(is_replacement, 0) AS is_replacement,
         created_at
       FROM substitution_records
       WHERE date >= ? AND date <= ?
@@ -123,9 +125,11 @@ export async function onRequestGet(context) {
     // 6. Compute overall totals
     let totalHours = 0;
     let totalDuties = 0;
+    let totalReplacements = 0;
     summary.forEach((item) => {
       totalHours += Number(item.hours_count || 0);
       totalDuties += Number(item.duties_count || 0);
+      totalReplacements += Number(item.replacements_count || 0);
     });
 
     return new Response(
@@ -145,6 +149,7 @@ export async function onRequestGet(context) {
           teachersCount: summary.length,
           totalHours,
           totalDuties,
+          totalReplacements,
           grandTotal: totalHours + totalDuties,
           totalAbsences: absences.length,
         },

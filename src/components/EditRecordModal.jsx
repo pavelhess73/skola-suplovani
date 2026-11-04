@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, User, Clock, ShieldAlert, BookOpen, MapPin, Save, AlertCircle } from 'lucide-react';
+import { X, Calendar, User, Clock, ShieldAlert, BookOpen, MapPin, Save, AlertCircle, RefreshCw } from 'lucide-react';
 import { formatIsoToCzech } from '../utils/dateUtils';
 
 export default function EditRecordModal({ record, onSave, onClose }) {
@@ -10,6 +10,7 @@ export default function EditRecordModal({ record, onSave, onClose }) {
   const [originalTeacher, setOriginalTeacher] = useState('');
   const [teacherName, setTeacherName] = useState('');
   const [date, setDate] = useState('');
+  const [isReplacement, setIsReplacement] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -22,6 +23,7 @@ export default function EditRecordModal({ record, onSave, onClose }) {
       setOriginalTeacher(record.original_teacher || '');
       setTeacherName(record.teacher_name || '');
       setDate(record.date || '');
+      setIsReplacement(Number(record.is_replacement) === 1);
     }
   }, [record]);
 
@@ -55,6 +57,7 @@ export default function EditRecordModal({ record, onSave, onClose }) {
         original_teacher: originalTeacher.trim() || null,
         teacher_name: teacherName.trim(),
         date,
+        is_replacement: type === 'HODINA' ? (isReplacement ? 1 : 0) : 0,
       });
       onClose();
     } catch (err) {
@@ -133,6 +136,28 @@ export default function EditRecordModal({ record, onSave, onClose }) {
               </button>
             </div>
           </div>
+
+          {/* Replacement Hour Toggle (Checkbox) */}
+          {type === 'HODINA' && (
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-start gap-3 animate-fade-in">
+              <input
+                id="is_replacement_checkbox"
+                type="checkbox"
+                checked={isReplacement}
+                onChange={(e) => setIsReplacement(e.target.checked)}
+                className="mt-0.5 w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500 cursor-pointer"
+              />
+              <label htmlFor="is_replacement_checkbox" className="text-xs text-slate-700 cursor-pointer select-none">
+                <span className="font-bold block text-slate-900 flex items-center gap-1.5">
+                  <RefreshCw className="w-3.5 h-3.5 text-brand-600" />
+                  Označit jako náhradní hodinu
+                </span>
+                <span className="text-slate-500 text-[11px] block mt-0.5">
+                  Nezapočítává se do statistik zátěže suplování ani čárek (např. odučení vlastní odpadlé hodiny v jiném čase).
+                </span>
+              </label>
+            </div>
+          )}
 
           {/* Suplující učitel and Date */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -273,4 +298,3 @@ export default function EditRecordModal({ record, onSave, onClose }) {
     </div>
   );
 }
-

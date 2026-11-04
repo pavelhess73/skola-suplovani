@@ -51,8 +51,8 @@ export async function onRequestPost(context) {
     const insertSubstStmts = records.map((r) =>
       env.DB.prepare(
         `INSERT INTO substitution_records 
-         (date, teacher_name, original_teacher, type, hour_slot, subject, classroom) 
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
+         (date, teacher_name, original_teacher, type, hour_slot, subject, classroom, is_replacement) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         date,
         r.teacher_name,
@@ -60,7 +60,8 @@ export async function onRequestPost(context) {
         r.type === 'DOZOR' ? 'DOZOR' : 'HODINA',
         r.hour_slot || null,
         r.subject || null,
-        r.classroom || null
+        r.classroom || null,
+        r.is_replacement ? 1 : 0
       )
     );
 
