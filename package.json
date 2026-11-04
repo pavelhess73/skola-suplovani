@@ -1,0 +1,29 @@
+{
+  "name": "skola-suplovani",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "pages:dev": "wrangler pages dev --d1=DB=skola-suplovani-db -- npm run dev",
+    "d1:migrate:local": "wrangler d1 migrations apply skola-suplovani-db --local",
+    "d1:migrate:prod": "wrangler d1 migrations apply skola-suplovani-db --remote"
+  },
+  "dependencies": {
+    "lucide-react": "^1.16.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "vite": "^6.0.7",
+    "wrangler": "^3.99.0"
+  }
+}
+
