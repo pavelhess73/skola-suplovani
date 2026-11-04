@@ -5,29 +5,23 @@ import {
   HeartPulse, 
   Stethoscope, 
   GraduationCap, 
-  Calendar, 
   Search, 
   Filter, 
   Baby, 
   Briefcase, 
-  Clock,
-  Pencil,
-  Trash2,
   AlertTriangle,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  Sparkles,
-  Layers
+  Trash2
 } from 'lucide-react';
 import { formatIsoToCzech } from '../utils/dateUtils';
 import EditAbsenceModal from './EditAbsenceModal';
+import TeacherAbsencesModal from './TeacherAbsencesModal';
 import { updateAbsence, deleteAbsence } from '../services/api';
 
 /**
  * Returns icon and badge styling for common Czech absence reasons
  */
-function getReasonBadgeStyle(reason = '') {
+export function getReasonBadgeStyle(reason = '') {
   const norm = reason.toLowerCase();
   if (norm.includes('sick')) {
     return {
@@ -74,7 +68,7 @@ function getReasonBadgeStyle(reason = '') {
 export default function AbsencesView({ absences = [], absenceSummary = {}, onAbsenceUpdated }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedReason, setSelectedReason] = useState('ALL'); // 'ALL' or specific reason
-  const [expandedTeachers, setExpandedTeachers] = useState({}); // { [teacherName]: boolean }
+  const [selectedTeacherName, setSelectedTeacherName] = useState(null); // for detail modal
   const [editingAbsence, setEditingAbsence] = useState(null);
   const [deletingAbsence, setDeletingAbsence] = useState(null);
   const [actionNotice, setActionNotice] = useState(null);
@@ -82,14 +76,6 @@ export default function AbsencesView({ absences = [], absenceSummary = {}, onAbs
 
   const byReason = absenceSummary.byReason || [];
   const totalAbsences = absences.length;
-
-  // Toggle expanding a single teacher card
-  const toggleTeacher = (teacherName) => {
-    setExpandedTeachers((prev) => ({
-      ...prev,
-      [teacherName]: !prev[teacherName],
-    }));
-  };
 
   // Group absences by teacher
   const groupedTeachers = useMemo(() => {
@@ -132,20 +118,11 @@ export default function AbsencesView({ absences = [], absenceSummary = {}, onAbs
     return list;
   }, [absences, searchTerm, selectedReason]);
 
-  // Expand / collapse all toggle
-  const allExpanded = useMemo(() => {
-    if (groupedTeachers.length === 0) return false;
-    return groupedTeachers.every((t) => !!expandedTeachers[t.teacher_name]);
-  }, [groupedTeachers, expandedTeachers]);
-
-  const toggleAll = () => {
-    const nextState = !allExpanded;
-    const update = {};
-    groupedTeachers.forEach((t) => {
-      update[t.teacher_name] = nextState;
-    });
-    setExpandedTeachers(update);
-  };
+  // Selected teacher object for modal (kept in sync)
+  const activeTeacherForModal = useMemo(() => {
+    if (!selectedTeacherName) return null;
+    return groupedTeachers.find((t) => t.teacher_name === selectedTeacherName) || null;
+  }, [groupedTeachers, selectedTeacherName]);
 
   // Top reason
   const topReason = byReason.length > 0 ? byReason[0].reason : '-';
@@ -224,7 +201,7 @@ export default function AbsencesView({ absences = [], absenceSummary = {}, onAbs
           </div>
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Chybějících pedagogů</p>
-            <p className="text-2xl font-black text-blue-900 mt-0.5">{Object.keys(groupedTeachers).length}</p>
+            <p className="text-2xl font-black text-blue-900 mt-0.5">{groupedTeachers.length}</p>
           </div>
         </div>
 
@@ -280,7 +257,7 @@ export default function AbsencesView({ absences = [], absenceSummary = {}, onAbs
                   type="button"
                   key={item.reason}
                   onClick={() => setSelectedReason(isSelected ? 'ALL' : item.reason)}
-                  className={`p-3 rounded-xl border text-left transition-all ${
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                     isSelected
                       ? 'border-brand-600 bg-brand-50/70 shadow-sm ring-2 ring-brand-500/30'
                       : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/80'
@@ -322,9 +299,9 @@ export default function AbsencesView({ absences = [], absenceSummary = {}, onAbs
         )}
       </div>
 
-      {/* 2. & 3. Mřížka karet učitelů s rozklikávacím akordeonem */}
+      {/* 2. Kompaktní mřížka dlaždic učitelů (4 až 6 vedle sebe) */}
       <div className="space-y-4">
-        {/* Controls Bar: Search & Expand All */}
+        {/* Controls Bar: Search */}
         <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-2">
             <Users className="w-5 h-5 text-purple-600" />
@@ -336,30 +313,15 @@ export default function AbsencesView({ absences = [], absenceSummary = {}, onAbs
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
-            {/* Search Input */}
-            <div className="relative flex-1 sm:w-64">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Hledat učitele..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 text-sm rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
-              />
-            </div>
-
-            {/* Expand / Collapse all button */}
-            {groupedTeachers.length > 0 && (
-              <button
-                type="button"
-                onClick={toggleAll}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors whitespace-nowrap shrink-0"
-              >
-                <Layers className="w-3.5 h-3.5" />
-                <span>{allExpanded ? 'Sbalit vše' : 'Rozbalit vše'}</span>
-              </button>
-            )}
+          <div className="relative max-w-xs w-full">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Hledat učitele..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-3 py-1.5 text-sm rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+            />
           </div>
         </div>
 
@@ -374,158 +336,67 @@ export default function AbsencesView({ absences = [], absenceSummary = {}, onAbs
             </p>
           </div>
         ) : (
-          /* Cards Grid */
-          <div className="grid grid-cols-1 gap-3.5">
-            {groupedTeachers.map((teacher) => {
-              const isExpanded = !!expandedTeachers[teacher.teacher_name];
-
-              return (
-                <div
-                  key={teacher.teacher_name}
-                  className={`bg-white rounded-2xl border transition-all overflow-hidden ${
-                    isExpanded
-                      ? 'border-brand-300 shadow-md ring-1 ring-brand-500/20'
-                      : 'border-slate-200 shadow-xs hover:border-slate-300 hover:shadow-sm'
-                  }`}
-                >
-                  {/* Card Header (Clickable Accordion Trigger) */}
-                  <div
-                    onClick={() => toggleTeacher(teacher.teacher_name)}
-                    className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 cursor-pointer select-none bg-white hover:bg-slate-50/50 transition-colors"
-                  >
-                    {/* Left: Avatar & Teacher Name */}
-                    <div className="flex items-center gap-3.5">
-                      <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-500 to-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
-                        {teacher.teacher_name.charAt(0)}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-bold text-base text-slate-900 tracking-tight">
-                            {teacher.teacher_name}
-                          </h4>
-                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
-                            {teacher.totalCount}{' '}
-                            {teacher.totalCount === 1
-                              ? 'absence'
-                              : teacher.totalCount < 5
-                              ? 'absence'
-                              : 'absencí'}
-                          </span>
-                        </div>
-
-                        {/* Badges of reasons with counts */}
-                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                          {Object.entries(teacher.reasonCounts).map(([reason, count]) => {
-                            const badgeStyle = getReasonBadgeStyle(reason);
-                            const Icon = badgeStyle.icon;
-
-                            return (
-                              <span
-                                key={reason}
-                                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${badgeStyle.bg}`}
-                              >
-                                <span className={`w-1.5 h-1.5 rounded-full ${badgeStyle.dot}`} />
-                                <Icon className="w-3 h-3" />
-                                <span>{reason}</span>
-                                <span className="font-bold ml-0.5">{count}×</span>
-                              </span>
-                            );
-                          })}
-                        </div>
-                      </div>
+          /* Responsive Grid: 2 cols on mobile, 3 sm, 4 md, 6 xl */
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3">
+            {groupedTeachers.map((teacher) => (
+              <div
+                key={teacher.teacher_name}
+                onClick={() => setSelectedTeacherName(teacher.teacher_name)}
+                className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-2xs hover:shadow-md hover:border-brand-400 hover:scale-[1.015] active:scale-[0.99] transition-all cursor-pointer flex flex-col justify-between group"
+              >
+                {/* Top: Avatar & Count Badge */}
+                <div>
+                  <div className="flex items-start justify-between gap-1.5 mb-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-purple-500 to-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0 group-hover:from-brand-600 group-hover:to-purple-600 transition-colors">
+                      {teacher.teacher_name.charAt(0)}
                     </div>
-
-                    {/* Right: Expand / Collapse Button */}
-                    <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
-                      <span className="text-xs font-semibold text-slate-500 sm:hidden">
-                        {isExpanded ? 'Skrýt podrobnosti' : 'Zobrazit podrobnosti'}
-                      </span>
-                      <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-transform duration-200 ${
-                          isExpanded
-                            ? 'bg-brand-100 text-brand-700 rotate-180'
-                            : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                        }`}
-                      >
-                        <ChevronDown className="w-4 h-4" />
-                      </div>
-                    </div>
+                    <span className="text-[11px] font-black px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200/80 shrink-0">
+                      {teacher.totalCount}×
+                    </span>
                   </div>
 
-                  {/* Accordion Detail: List of Individual Absences */}
-                  {isExpanded && (
-                    <div className="border-t border-slate-100 bg-slate-50/60 p-4 sm:p-5 space-y-2.5 animate-fade-in">
-                      <div className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
-                        Rozpis jednotlivých absencí v období:
-                      </div>
-
-                      <div className="space-y-2">
-                        {teacher.absences.map((item) => {
-                          const badgeStyle = getReasonBadgeStyle(item.reason);
-                          const Icon = badgeStyle.icon;
-
-                          return (
-                            <div
-                              key={item.id}
-                              className="bg-white rounded-xl p-3 sm:p-3.5 border border-slate-200/90 shadow-2xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 hover:border-slate-300 transition-colors"
-                            >
-                              {/* Date & Time range */}
-                              <div className="flex flex-wrap items-center gap-3 text-sm">
-                                <span className="inline-flex items-center gap-1.5 font-bold text-slate-900">
-                                  <Calendar className="w-4 h-4 text-brand-600" />
-                                  {formatIsoToCzech(item.date)}
-                                </span>
-
-                                <span className="text-slate-300 hidden sm:inline">•</span>
-
-                                <span className="inline-flex items-center gap-1 text-slate-600 text-xs sm:text-sm">
-                                  <Clock className="w-3.5 h-3.5 text-slate-400" />
-                                  Rozsah: <strong className="text-slate-800 ml-1">{item.time_range}</strong>
-                                </span>
-                              </div>
-
-                              {/* Reason Badge & Actions */}
-                              <div className="flex items-center justify-between sm:justify-end gap-3">
-                                <span
-                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${badgeStyle.bg}`}
-                                >
-                                  <span className={`w-1.5 h-1.5 rounded-full ${badgeStyle.dot}`} />
-                                  <Icon className="w-3.5 h-3.5" />
-                                  <span>{item.reason}</span>
-                                </span>
-
-                                {/* Action buttons: Edit & Delete */}
-                                <div className="flex items-center gap-1 border-l border-slate-200 pl-3">
-                                  <button
-                                    type="button"
-                                    onClick={() => setEditingAbsence(item)}
-                                    title="Upravit záznam absence"
-                                    className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
-                                  >
-                                    <Pencil className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setDeletingAbsence(item)}
-                                    title="Smazat záznam absence"
-                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
+                  {/* Teacher Name */}
+                  <h4
+                    className="font-bold text-xs sm:text-sm text-slate-900 line-clamp-2 group-hover:text-brand-600 transition-colors leading-tight"
+                    title={teacher.teacher_name}
+                  >
+                    {teacher.teacher_name}
+                  </h4>
                 </div>
-              );
-            })}
+
+                {/* Bottom: Compact Reason Tags */}
+                <div className="mt-3 pt-2.5 border-t border-slate-100 flex flex-wrap gap-1">
+                  {Object.entries(teacher.reasonCounts).map(([reason, count]) => {
+                    const badgeStyle = getReasonBadgeStyle(reason);
+                    return (
+                      <span
+                        key={reason}
+                        title={`${reason}: ${count}×`}
+                        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border truncate max-w-full ${badgeStyle.bg}`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${badgeStyle.dot}`} />
+                        <span className="truncate">{reason}</span>
+                        {count > 1 && <span className="font-bold shrink-0">{count}×</span>}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
+
+      {/* Teacher Absences Detail Modal */}
+      {activeTeacherForModal && (
+        <TeacherAbsencesModal
+          teacher={activeTeacherForModal}
+          onClose={() => setSelectedTeacherName(null)}
+          onEditAbsence={(item) => setEditingAbsence(item)}
+          onDeleteAbsence={(item) => setDeletingAbsence(item)}
+          getReasonBadgeStyle={getReasonBadgeStyle}
+        />
+      )}
 
       {/* Edit Modal Dialog */}
       {editingAbsence && (
