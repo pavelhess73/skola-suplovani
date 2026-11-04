@@ -19,9 +19,7 @@ function normalizeText(text) {
 export function extractDateFromRows(rows) {
   const topRows = rows.slice(0, 5);
 
-  // Regex for Czech date: D. M. YYYY or DD. MM. YYYY
   const czDateRegex = /(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})/;
-  // Regex for ISO date: YYYY-MM-DD
   const isoDateRegex = /(\d{4})-(\d{1,2})-(\d{1,2})/;
 
   for (const row of topRows) {
@@ -52,9 +50,110 @@ export function extractDateFromRows(rows) {
 }
 
 /**
+ * Parses the "Chybějící" sheet for absent teachers.
+ */
+export function parseAbsencesFromSheet(sheet, dateIso) {
+  if (!sheet) return [];
+  const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+  if (!rawRows || rawRows.length === 0) return [];
+
+  let headerRowIndex = -1;
+  let colIndexes = {
+    teacher: -1,
+    reason: -1,
+    timeRange: -1,
+  };
+
+  for (let r = 0; r < Math.min(rawRows.length, 15); r++) {
+    const row = rawRows[r];
+    if (!Array.isArray(row)) continue;
+
+    const currentCols = { teacher: -1, reason: -1, timeRange: -1 };
+
+    row.forEach((cell, c) => {
+      const norm = normalizeText(cell);
+      // Skip title rows that contain years or are long titles
+      if (norm.includes('202') || norm.length > 35) return;
+
+      if (
+        norm === 'chybejici' || 
+        norm === 'ucitel' || 
+        norm === 'kdo' || 
+        norm === 'jmeno' || 
+        norm.includes('chybejici ucitel')
+      ) {
+        currentCols.teacher = c;
+      } else if (norm.includes('duvod') || norm === 'typ') {
+        currentCols.reason = c;
+      } else if (norm === 'kdy' || norm === 'doba' || norm === 'cas' || norm === 'rozsah' || norm.includes('hodin')) {
+        currentCols.timeRange = c;
+      }
+    });
+
+    if (currentCols.teacher !== -1 && (currentCols.reason !== -1 || currentCols.timeRange !== -1)) {
+      headerRowIndex = r;
+      colIndexes = currentCols;
+      break;
+    }
+  }
+
+  // Fallback: search for exact cell "chybejici" or "kdo"
+  if (headerRowIndex === -1) {
+    for (let r = 0; r < Math.min(rawRows.length, 15); r++) {
+      const row = rawRows[r];
+      if (!Array.isArray(row)) continue;
+      const idx = row.findIndex((c) => {
+        const norm = normalizeText(c);
+        return (norm === 'chybejici' || norm === 'kdo' || norm === 'ucitel') && !norm.includes('202');
+      });
+      if (idx !== -1) {
+        headerRowIndex = r;
+        colIndexes.teacher = idx;
+        row.forEach((cell, c) => {
+          const norm = normalizeText(cell);
+          if (norm.includes('duvod')) colIndexes.reason = c;
+          if (norm === 'kdy' || norm.includes('doba') || norm.includes('cas')) colIndexes.timeRange = c;
+        });
+        break;
+      }
+    }
+  }
+
+  if (headerRowIndex === -1 || colIndexes.teacher === -1) {
+    return [];
+  }
+
+  const absences = [];
+
+  for (let r = headerRowIndex + 1; r < rawRows.length; r++) {
+    const row = rawRows[r];
+    if (!Array.isArray(row) || row.length === 0) continue;
+
+    const teacherRaw = String(row[colIndexes.teacher] || '').trim();
+    if (!teacherRaw || teacherRaw === '-' || teacherRaw === '/') continue;
+
+    // Skip repeated header line
+    const normTeacher = normalizeText(teacherRaw);
+    if (normTeacher === 'chybejici' || normTeacher === 'kdo' || normTeacher === 'ucitel') continue;
+
+    const reasonRaw = colIndexes.reason !== -1 ? String(row[colIndexes.reason] || '').trim() : '';
+    const timeRaw = colIndexes.timeRange !== -1 ? String(row[colIndexes.timeRange] || '').trim() : '';
+
+    absences.push({
+      date: dateIso,
+      teacher_name: teacherRaw,
+      reason: reasonRaw || 'Neurčeno',
+      time_range: timeRaw || 'Celý den',
+    });
+  }
+
+  return absences;
+}
+
+/**
  * Parses EduPage substitution Excel sheet.
  * @param {ArrayBuffer | Uint8Array} fileData
- * @returns {Promise<{ date: string, dateFormatted: string, records: Array }>}
+ * @returns {Promise<{ date: string, dateFormatted: string, sheetName: string, records: Array, absences: Array }>}
  */
 export async function parseEdupageExcel(fileData) {
   const workbook = XLSX.read(fileData, { type: 'array' });
@@ -63,16 +162,33 @@ export async function parseEdupageExcel(fileData) {
     throw new Error('Soubor neobsahuje žádné listy.');
   }
 
-  const sheetName = workbook.SheetNames[0];
-  const sheet = workbook.Sheets[sheetName];
+  // Identify sheets: "Suplování" vs "Chybějící"
+  let mainSheetName = workbook.SheetNames[0];
+  let absenceSheetName = null;
+
+  for (const name of workbook.SheetNames) {
+    const norm = normalizeText(name);
+    if (norm.includes('chybej') || norm.includes('absenc')) {
+      absenceSheetName = name;
+    } else if (norm.includes('supl')) {
+      mainSheetName = name;
+    }
+  }
+
+  const sheet = workbook.Sheets[mainSheetName];
   const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
   if (!rawRows || rawRows.length === 0) {
-    throw new Error('List v sešitu je prázdný.');
+    throw new Error(`List "${mainSheetName}" v sešitu je prázdný.`);
   }
 
-  // 1. Extract date from header (first 5 rows)
-  const dateIso = extractDateFromRows(rawRows);
+  // 1. Extract date from header (first 5 rows of primary sheet or first sheet)
+  let dateIso = extractDateFromRows(rawRows);
+  if (!dateIso && absenceSheetName) {
+    const absenceRows = XLSX.utils.sheet_to_json(workbook.Sheets[absenceSheetName], { header: 1, defval: '' });
+    dateIso = extractDateFromRows(absenceRows);
+  }
+
   if (!dateIso) {
     throw new Error('V prvních 5 řádcích souboru se nepodařilo nalézt platné datum (např. "04. 11. 2026").');
   }
@@ -81,7 +197,7 @@ export async function parseEdupageExcel(fileData) {
   const [year, month, day] = dateIso.split('-');
   const dateFormatted = `${day}. ${month}. ${year}`;
 
-  // 2. Identify header row
+  // 2. Identify header row for substitutions
   let headerRowIndex = -1;
   let colIndexes = {
     hour: -1,
@@ -113,7 +229,6 @@ export async function parseEdupageExcel(fileData) {
 
     if (hasSuplujici && hasChybejiciOrPredmet) {
       headerRowIndex = r;
-      // Map columns
       row.forEach((cell, c) => {
         const norm = normalizeText(cell);
         if (norm.includes('hodin')) colIndexes.hour = c;
@@ -134,7 +249,7 @@ export async function parseEdupageExcel(fileData) {
     for (let r = 0; r < Math.min(rawRows.length, 15); r++) {
       const row = rawRows[r];
       if (!Array.isArray(row)) continue;
-      const idx = row.findIndex(c => normalizeText(c).includes('supluj'));
+      const idx = row.findIndex((c) => normalizeText(c).includes('supluj'));
       if (idx !== -1) {
         headerRowIndex = r;
         colIndexes.substituting = idx;
@@ -156,7 +271,6 @@ export async function parseEdupageExcel(fileData) {
 
     const teacherRaw = colIndexes.substituting !== -1 ? String(row[colIndexes.substituting] || '').trim() : '';
     
-    // Ignore rows where substituting teacher is empty or invalid
     if (!teacherRaw || teacherRaw === '-' || teacherRaw === '/' || normalizeText(teacherRaw) === 'odpada') {
       continue;
     }
@@ -173,7 +287,6 @@ export async function parseEdupageExcel(fileData) {
     const typeCol = colIndexes.type !== -1 ? String(row[colIndexes.type] || '').trim() : '';
     const noteCol = colIndexes.note !== -1 ? String(row[colIndexes.note] || '').trim() : '';
 
-    // Determine type: DOZOR if "Typ" or "Předmět" or note contains "Dohled" / "Dozor"
     const combinedTypeInfo = normalizeText(`${typeCol} ${subject} ${noteCol}`);
     const isDozor = combinedTypeInfo.includes('dohled') || combinedTypeInfo.includes('dozor');
     const recordType = isDozor ? 'DOZOR' : 'HODINA';
@@ -189,11 +302,17 @@ export async function parseEdupageExcel(fileData) {
     });
   }
 
+  // 4. Parse absences if "Chybějící" sheet exists
+  let absences = [];
+  if (absenceSheetName && workbook.Sheets[absenceSheetName]) {
+    absences = parseAbsencesFromSheet(workbook.Sheets[absenceSheetName], dateIso);
+  }
+
   return {
     date: dateIso,
     dateFormatted,
-    sheetName,
+    sheetName: mainSheetName,
     records,
+    absences,
   };
 }
-

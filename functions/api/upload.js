@@ -1,6 +1,6 @@
 /**
  * Cloudflare Pages Function: /api/upload
- * Handles bulk upload of parsed substitution records for a specific date.
+ * Handles bulk upload of parsed substitution records and absences for a specific date.
  * Deletes old records for that date and inserts new ones in a batch/transaction.
  */
 
@@ -17,7 +17,7 @@ export async function onRequestPost(context) {
 
   try {
     const body = await request.json();
-    const { date, records } = body;
+    const { date, records, absences = [] } = body;
 
     if (!date) {
       return new Response(
@@ -43,39 +43,56 @@ export async function onRequestPost(context) {
       );
     }
 
-    // Prepare delete statement
-    const deleteStmt = env.DB.prepare('DELETE FROM substitution_records WHERE date = ?').bind(date);
+    // 1. Prepare delete statements for substitutions and absences
+    const deleteSubstStmt = env.DB.prepare('DELETE FROM substitution_records WHERE date = ?').bind(date);
+    const deleteAbsenceStmt = env.DB.prepare('DELETE FROM absence_records WHERE date = ?').bind(date);
 
-    // If records exist, prepare inserts
-    if (records.length > 0) {
-      const insertStmts = records.map((r) =>
-        env.DB.prepare(
-          `INSERT INTO substitution_records 
-           (date, teacher_name, original_teacher, type, hour_slot, subject, classroom) 
-           VALUES (?, ?, ?, ?, ?, ?, ?)`
-        ).bind(
-          date,
-          r.teacher_name,
-          r.original_teacher || null,
-          r.type === 'DOZOR' ? 'DOZOR' : 'HODINA',
-          r.hour_slot || null,
-          r.subject || null,
-          r.classroom || null
-        )
-      );
+    // 2. Prepare insert statements for substitutions
+    const insertSubstStmts = records.map((r) =>
+      env.DB.prepare(
+        `INSERT INTO substitution_records 
+         (date, teacher_name, original_teacher, type, hour_slot, subject, classroom) 
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        date,
+        r.teacher_name,
+        r.original_teacher || null,
+        r.type === 'DOZOR' ? 'DOZOR' : 'HODINA',
+        r.hour_slot || null,
+        r.subject || null,
+        r.classroom || null
+      )
+    );
 
-      // Execute atomic batch
-      await env.DB.batch([deleteStmt, ...insertStmts]);
-    } else {
-      await deleteStmt.run();
-    }
+    // 3. Prepare insert statements for absences
+    const insertAbsenceStmts = (Array.isArray(absences) ? absences : []).map((a) =>
+      env.DB.prepare(
+        `INSERT INTO absence_records 
+         (date, teacher_name, reason, time_range) 
+         VALUES (?, ?, ?, ?)`
+      ).bind(
+        date,
+        a.teacher_name,
+        a.reason || 'Neurčeno',
+        a.time_range || 'Celý den'
+      )
+    );
+
+    // Execute atomic batch
+    await env.DB.batch([
+      deleteSubstStmt,
+      deleteAbsenceStmt,
+      ...insertSubstStmts,
+      ...insertAbsenceStmts,
+    ]);
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Záznamy pro ${date} byly úspěšně uloženy.`,
+        message: `Záznamy pro ${date} byly úspěšně uloženy (${records.length} suplování, ${absences.length} absencí).`,
         date,
         count: records.length,
+        absencesCount: absences.length,
       }),
       { status: 200, headers: corsHeaders }
     );
@@ -101,4 +118,3 @@ export async function onRequestOptions() {
     },
   });
 }
-

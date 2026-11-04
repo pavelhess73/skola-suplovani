@@ -5,12 +5,10 @@ import {
   CheckCircle2, 
   AlertCircle, 
   Calendar, 
-  Users, 
   Clock, 
   ShieldAlert, 
   ArrowRight, 
-  X, 
-  FileText,
+  UserX,
   Sparkles
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -22,6 +20,7 @@ export default function FileUpload({ onUploadSuccess, onNavigateToStats }) {
   const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [parsedData, setParsedData] = useState(null);
+  const [previewTab, setPreviewTab] = useState('subst'); // 'subst' | 'absences'
   const [error, setError] = useState(null);
   const [successInfo, setSuccessInfo] = useState(null);
   const fileInputRef = useRef(null);
@@ -65,8 +64,8 @@ export default function FileUpload({ onUploadSuccess, onNavigateToStats }) {
       const buffer = await file.arrayBuffer();
       const result = await parseEdupageExcel(buffer);
 
-      if (!result.records || result.records.length === 0) {
-        setError(`V souboru pro datum ${result.dateFormatted} nebyly nalezeny žádné záznamy se suplujícím učitelem.`);
+      if ((!result.records || result.records.length === 0) && (!result.absences || result.absences.length === 0)) {
+        setError(`V souboru pro datum ${result.dateFormatted} nebyly nalezeny žádné záznamy.`);
         setParsing(false);
         return;
       }
@@ -76,6 +75,7 @@ export default function FileUpload({ onUploadSuccess, onNavigateToStats }) {
         fileSize: (file.size / 1024).toFixed(1) + ' KB',
         ...result,
       });
+      setPreviewTab('subst');
     } catch (err) {
       console.error('Parsing error:', err);
       setError(err.message || 'Nepodařilo se zpracovat soubor z EduPage.');
@@ -87,7 +87,7 @@ export default function FileUpload({ onUploadSuccess, onNavigateToStats }) {
     }
   };
 
-  // Generate sample EduPage Excel to test immediately
+  // Generate sample EduPage Excel with BOTH "Suplování" and "Chybějící" sheets
   const handleGenerateSampleFile = async () => {
     setError(null);
     setSuccessInfo(null);
@@ -99,11 +99,8 @@ export default function FileUpload({ onUploadSuccess, onNavigateToStats }) {
       const month = String(today.getMonth() + 1).padStart(2, '0');
       const year = today.getFullYear();
 
-      // Typical EduPage sheet format:
-      // Row 1: Header title with Date
-      // Row 4: Column names
-      // Rows 5+: records
-      const sampleData = [
+      // 1. Sheet Suplování
+      const sampleSuplovani = [
         [`Suplování: Středa ${day}. ${month}. ${year}`],
         ['Gymnázium a Střední odborná škola'],
         [''],
@@ -118,17 +115,34 @@ export default function FileUpload({ onUploadSuccess, onNavigateToStats }) {
         ['Přestávka', 'Dvůr', 'Dohled - areál', 'Dvůr', 'Horák Tomáš', 'Černá Marie', 'Dohled'],
       ];
 
-      const ws = XLSX.utils.aoa_to_sheet(sampleData);
+      // 2. Sheet Chybějící
+      const sampleChybejici = [
+        [`Chybějící učitelé: Středa ${day}. ${month}. ${year}`],
+        [''],
+        ['Chybějící', 'Důvod', 'Kdy'],
+        ['Novák Jan', 'Sick Day', 'Celý den'],
+        ['Dvořáková Eva', 'Lékař', '1 - 3'],
+        ['Horák Tomáš', 'Školení', 'Celý den'],
+        ['Kovář Pavel', 'OČR', 'Celý den'],
+        ['Veselá Lucie', 'Lékař', '3 - 4'],
+      ];
+
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Suplování');
+      const wsSupl = XLSX.utils.aoa_to_sheet(sampleSuplovani);
+      const wsChyb = XLSX.utils.aoa_to_sheet(sampleChybejici);
+
+      XLSX.utils.book_append_sheet(wb, wsSupl, 'Suplování');
+      XLSX.utils.book_append_sheet(wb, wsChyb, 'Chybějící');
+
       const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
 
       const result = await parseEdupageExcel(wbout);
       setParsedData({
-        fileName: `edupage-suplovani-ukazka-${year}-${month}-${day}.xlsx`,
-        fileSize: '8.4 KB',
+        fileName: `edupage-export-${year}-${month}-${day}.xlsx`,
+        fileSize: '9.2 KB',
         ...result,
       });
+      setPreviewTab('subst');
     } catch (err) {
       setError(err.message || 'Nepodařilo se vygenerovat ukázkový soubor.');
     } finally {
@@ -142,11 +156,12 @@ export default function FileUpload({ onUploadSuccess, onNavigateToStats }) {
     try {
       setSaving(true);
       setError(null);
-      const res = await uploadRecords(parsedData.date, parsedData.records);
+      const res = await uploadRecords(parsedData.date, parsedData.records, parsedData.absences || []);
 
       setSuccessInfo({
         date: parsedData.dateFormatted,
         count: parsedData.records.length,
+        absencesCount: (parsedData.absences || []).length,
         message: res.message,
       });
 
@@ -164,6 +179,7 @@ export default function FileUpload({ onUploadSuccess, onNavigateToStats }) {
 
   const hoursCount = parsedData ? parsedData.records.filter((r) => r.type === 'HODINA').length : 0;
   const dutiesCount = parsedData ? parsedData.records.filter((r) => r.type === 'DOZOR').length : 0;
+  const absencesCount = parsedData && parsedData.absences ? parsedData.absences.length : 0;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -173,7 +189,7 @@ export default function FileUpload({ onUploadSuccess, onNavigateToStats }) {
           <div>
             <h2 className="text-xl font-bold text-slate-900">Nahrání exportu z EduPage</h2>
             <p className="text-sm text-slate-500 mt-1">
-              Přetáhněte vygenerovaný Excel (.xlsx) s denním rozpisem suplování a dozorů.
+              Přetáhněte vygenerovaný Excel (.xlsx) s denním rozpisem suplování, dozorů a chybějících učitelů.
             </p>
           </div>
           <button
@@ -183,7 +199,7 @@ export default function FileUpload({ onUploadSuccess, onNavigateToStats }) {
             className="inline-flex items-center gap-2 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-lg transition-colors border border-indigo-200/80 shadow-xs"
           >
             <Sparkles className="w-4 h-4 text-indigo-600" />
-            <span>Vygenerovat vzorový EduPage soubor</span>
+            <span>Vygenerovat vzorový export (sešit se suplováním i chybějícími)</span>
           </button>
         </div>
 
@@ -223,7 +239,7 @@ export default function FileUpload({ onUploadSuccess, onNavigateToStats }) {
         {parsing && (
           <div className="mt-4 p-4 rounded-xl bg-brand-50 border border-brand-100 flex items-center gap-3 text-brand-800 text-sm">
             <div className="w-4 h-4 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
-            <span>Zpracovávám sešit a extrahuji datum a rozpis...</span>
+            <span>Zpracovávám sešit, suplování i list chybějících...</span>
           </div>
         )}
 
@@ -246,8 +262,8 @@ export default function FileUpload({ onUploadSuccess, onNavigateToStats }) {
               <div className="flex-1">
                 <h3 className="font-bold text-base text-emerald-950">Záznamy úspěšně uloženy do databáze</h3>
                 <p className="text-sm text-emerald-800 mt-1">
-                  Pro datum <strong>{successInfo.date}</strong> bylo v databázi Cloudflare D1 aktualizováno{' '}
-                  <strong>{successInfo.count} záznamů</strong>. Staré záznamy pro tento den byly přepsány.
+                  Pro datum <strong>{successInfo.date}</strong> bylo v databázi Cloudflare D1 uloženo{' '}
+                  <strong>{successInfo.count} suplování / dozorů</strong> a <strong>{successInfo.absencesCount} absencí</strong>.
                 </p>
                 <div className="mt-4 flex gap-3">
                   <button
@@ -258,7 +274,7 @@ export default function FileUpload({ onUploadSuccess, onNavigateToStats }) {
                     }}
                     className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors"
                   >
-                    <span>Zobrazit přehled statistik</span>
+                    <span>Zobrazit přehled statistik a absencí</span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
                   <button
@@ -299,6 +315,12 @@ export default function FileUpload({ onUploadSuccess, onNavigateToStats }) {
                   <ShieldAlert className="w-4 h-4 text-amber-600" />
                   {dutiesCount} dozorů
                 </span>
+                {absencesCount > 0 && (
+                  <span className="flex items-center gap-1.5 text-purple-700 font-medium">
+                    <UserX className="w-4 h-4 text-purple-600" />
+                    {absencesCount} absencí
+                  </span>
+                )}
               </div>
             </div>
 
@@ -333,58 +355,110 @@ export default function FileUpload({ onUploadSuccess, onNavigateToStats }) {
             </div>
           </div>
 
-          {/* Quick Notice */}
-          <div className="px-6 py-3 bg-amber-50/70 border-b border-amber-100/60 text-xs text-amber-800 flex items-center gap-2">
-            <span className="font-semibold uppercase tracking-wider text-[10px] bg-amber-200/70 px-1.5 py-0.5 rounded">
-              Upozornění
-            </span>
-            <span>
-              Pokud pro datum <strong>{parsedData.dateFormatted}</strong> již existují záznamy, budou v databázi bezpečně nahrazeny tímto novým importem.
+          {/* Tab buttons for preview: Suplování vs Chybějící */}
+          <div className="px-6 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPreviewTab('subst')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                  previewTab === 'subst'
+                    ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Suplování & Dozory ({parsedData.records.length})
+              </button>
+              {absencesCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPreviewTab('absences')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                    previewTab === 'absences'
+                      ? 'bg-white text-purple-900 shadow-xs border border-slate-200'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Chybějící učitelé ({absencesCount})
+                </button>
+              )}
+            </div>
+            <span className="text-xs text-slate-500">
+              Staré záznamy pro tento den budou v D1 bezpečně přepsány.
             </span>
           </div>
 
-          {/* Table Preview */}
-          <div className="overflow-x-auto max-h-96">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-slate-600 text-xs uppercase font-semibold tracking-wider sticky top-0 border-b border-slate-200">
-                <tr>
-                  <th className="py-3 px-4">Typ</th>
-                  <th className="py-3 px-4">Suplující učitel</th>
-                  <th className="py-3 px-4">Hodina / Čas</th>
-                  <th className="py-3 px-4">Předmět / Popis</th>
-                  <th className="py-3 px-4">Učebna</th>
-                  <th className="py-3 px-4">Chybějící vyučující</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {parsedData.records.map((r, i) => (
-                  <tr key={i} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-2.5 px-4 whitespace-nowrap">
-                      {r.type === 'DOZOR' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200">
-                          <ShieldAlert className="w-3 h-3 text-amber-600" />
-                          DOZOR
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-200">
-                          <Clock className="w-3 h-3 text-blue-600" />
-                          HODINA
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-2.5 px-4 font-semibold text-slate-900">{r.teacher_name}</td>
-                    <td className="py-2.5 px-4 text-slate-600">{r.hour_slot || '-'}</td>
-                    <td className="py-2.5 px-4 text-slate-700">{r.subject || '-'}</td>
-                    <td className="py-2.5 px-4 text-slate-600">{r.classroom || '-'}</td>
-                    <td className="py-2.5 px-4 text-slate-500 italic">{r.original_teacher || '-'}</td>
+          {/* Table Preview: Substitutions */}
+          {previewTab === 'subst' && (
+            <div className="overflow-x-auto max-h-96">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-slate-600 text-xs uppercase font-semibold tracking-wider sticky top-0 border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4">Typ</th>
+                    <th className="py-3 px-4">Suplující učitel</th>
+                    <th className="py-3 px-4">Hodina / Čas</th>
+                    <th className="py-3 px-4">Předmět / Popis</th>
+                    <th className="py-3 px-4">Učebna</th>
+                    <th className="py-3 px-4">Chybějící vyučující</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {parsedData.records.map((r, i) => (
+                    <tr key={i} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-2.5 px-4 whitespace-nowrap">
+                        {r.type === 'DOZOR' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+                            <ShieldAlert className="w-3 h-3 text-amber-600" />
+                            DOZOR
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-200">
+                            <Clock className="w-3 h-3 text-blue-600" />
+                            HODINA
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-4 font-semibold text-slate-900">{r.teacher_name}</td>
+                      <td className="py-2.5 px-4 text-slate-600">{r.hour_slot || '-'}</td>
+                      <td className="py-2.5 px-4 text-slate-700">{r.subject || '-'}</td>
+                      <td className="py-2.5 px-4 text-slate-600">{r.classroom || '-'}</td>
+                      <td className="py-2.5 px-4 text-slate-500 italic">{r.original_teacher || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Table Preview: Absences */}
+          {previewTab === 'absences' && (
+            <div className="overflow-x-auto max-h-96">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-slate-600 text-xs uppercase font-semibold tracking-wider sticky top-0 border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4">Chybějící vyučující</th>
+                    <th className="py-3 px-4">Důvod absence</th>
+                    <th className="py-3 px-4">Kdy / Rozsah</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {(parsedData.absences || []).map((a, i) => (
+                    <tr key={i} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-2.5 px-4 font-semibold text-slate-900">{a.teacher_name}</td>
+                      <td className="py-2.5 px-4">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 border border-purple-200">
+                          {a.reason}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-4 text-slate-600">{a.time_range}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
-

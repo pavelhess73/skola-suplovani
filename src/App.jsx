@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from './components/Navbar';
 import PeriodSelector from './components/PeriodSelector';
 import StatsTable from './components/StatsTable';
+import AbsencesView from './components/AbsencesView';
 import FileUpload from './components/FileUpload';
 import TeacherDetailModal from './components/TeacherDetailModal';
 import LoginScreen from './components/LoginScreen';
@@ -11,18 +12,25 @@ import { AlertCircle } from 'lucide-react';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => !!getAuthToken());
-  const [activeTab, setActiveTab] = useState('stats'); // 'stats' | 'upload'
+  const [activeTab, setActiveTab] = useState('stats'); // 'stats' | 'absences' | 'upload'
   const [activeRange, setActiveRange] = useState(getThisWeekRange());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [data, setData] = useState({
     summary: [],
     records: [],
+    absences: [],
+    absenceSummary: {
+      totalAbsences: 0,
+      byReason: [],
+      byTeacher: [],
+    },
     totals: {
       teachersCount: 0,
       totalHours: 0,
       totalDuties: 0,
       grandTotal: 0,
+      totalAbsences: 0,
     },
     isLocalFallback: false,
   });
@@ -43,11 +51,18 @@ export default function App() {
           setData({
             summary: res.summary || [],
             records: res.records || [],
+            absences: res.absences || [],
+            absenceSummary: res.absenceSummary || {
+              totalAbsences: 0,
+              byReason: [],
+              byTeacher: [],
+            },
             totals: res.totals || {
               teachersCount: 0,
               totalHours: 0,
               totalDuties: 0,
               grandTotal: 0,
+              totalAbsences: 0,
             },
             isLocalFallback: !!res.isLocalFallback,
           });
@@ -127,14 +142,17 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab 1: Stats */}
-        {activeTab === 'stats' && (
-          <div className="space-y-6">
-            <PeriodSelector
-              activeRange={activeRange}
-              onRangeChange={handleRangeChange}
-            />
+        {/* Period Selector (shared for Stats and Absences) */}
+        {(activeTab === 'stats' || activeTab === 'absences') && (
+          <PeriodSelector
+            activeRange={activeRange}
+            onRangeChange={handleRangeChange}
+          />
+        )}
 
+        {/* Tab 1: Stats (Suplování & Dozory) */}
+        {activeTab === 'stats' && (
+          <div>
             {loading ? (
               <div className="bg-white rounded-2xl p-12 border border-slate-200 text-center">
                 <div className="w-8 h-8 border-3 border-brand-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
@@ -151,7 +169,25 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab 2: Upload */}
+        {/* Tab 2: Absences (Chybějící) */}
+        {activeTab === 'absences' && (
+          <div>
+            {loading ? (
+              <div className="bg-white rounded-2xl p-12 border border-slate-200 text-center">
+                <div className="w-8 h-8 border-3 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                <p className="text-sm text-slate-500">Načítám přehled absencí...</p>
+              </div>
+            ) : (
+              <AbsencesView
+                absences={data.absences}
+                absenceSummary={data.absenceSummary}
+                activeRange={activeRange}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Tab 3: Upload */}
         {activeTab === 'upload' && (
           <FileUpload
             onUploadSuccess={handleUploadSuccess}

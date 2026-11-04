@@ -4,6 +4,7 @@
  */
 
 const LOCAL_STORAGE_KEY = 'skola_suplovani_records_v1';
+const LOCAL_STORAGE_ABSENCES_KEY = 'skola_suplovani_absences_v1';
 const AUTH_TOKEN_KEY = 'edu_auth_token';
 const DEFAULT_PASSWORD = 'skola2026';
 
@@ -91,6 +92,44 @@ export const SAMPLE_RECORDS = [
   },
 ];
 
+export const SAMPLE_ABSENCES = [
+  {
+    id: 1,
+    date: '2026-11-04',
+    teacher_name: 'Mgr. Svobodová Jana',
+    reason: 'Sick Day',
+    time_range: 'Celý den',
+  },
+  {
+    id: 2,
+    date: '2026-11-04',
+    teacher_name: 'Ing. Černý Michal',
+    reason: 'Lékař',
+    time_range: '1 - 3',
+  },
+  {
+    id: 3,
+    date: '2026-11-04',
+    teacher_name: 'PaedDr. Horák Tomáš',
+    reason: 'Školení',
+    time_range: 'Celý den',
+  },
+  {
+    id: 4,
+    date: '2026-11-03',
+    teacher_name: 'Mgr. Novák Jan',
+    reason: 'Lékař',
+    time_range: '1 - 2',
+  },
+  {
+    id: 5,
+    date: '2026-11-02',
+    teacher_name: 'Ing. Černý Michal',
+    reason: 'OČR',
+    time_range: 'Celý den',
+  },
+];
+
 // --- Authentication Helpers ---
 
 export function getAuthToken() {
@@ -130,7 +169,6 @@ export async function login(password) {
 
     throw new Error(data.error || `Chyba při přihlašování (${res.status})`);
   } catch (err) {
-    // If backend endpoint is unavailable (e.g. pure Vite dev without Wrangler backend)
     if (err.message.includes('Nesprávné přihlašovací heslo')) {
       throw err;
     }
@@ -161,7 +199,6 @@ export async function verifyToken(token) {
     }
     return true;
   } catch (e) {
-    // In local fallback mode
     return token.startsWith('mock_token_') || token.length > 20;
   }
 }
@@ -186,6 +223,27 @@ function saveLocalRecords(records) {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(records));
   } catch (e) {
     console.error('Failed to save to localStorage', e);
+  }
+}
+
+function getLocalAbsences() {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_ABSENCES_KEY);
+    if (!raw) {
+      localStorage.setItem(LOCAL_STORAGE_ABSENCES_KEY, JSON.stringify(SAMPLE_ABSENCES));
+      return SAMPLE_ABSENCES;
+    }
+    return JSON.parse(raw);
+  } catch (e) {
+    return SAMPLE_ABSENCES;
+  }
+}
+
+function saveLocalAbsences(absences) {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_ABSENCES_KEY, JSON.stringify(absences));
+  } catch (e) {
+    console.error('Failed to save absences to localStorage', e);
   }
 }
 
@@ -220,7 +278,7 @@ export async function fetchStats(startDate, endDate) {
   }
 }
 
-export async function uploadRecords(date, records) {
+export async function uploadRecords(date, records, absences = []) {
   const token = getAuthToken();
   const headers = { 'Content-Type': 'application/json' };
   if (token) {
@@ -231,7 +289,7 @@ export async function uploadRecords(date, records) {
     const response = await fetch('/api/upload', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ date, records }),
+      body: JSON.stringify({ date, records, absences }),
     });
 
     if (response.status === 401) {
@@ -250,14 +308,24 @@ export async function uploadRecords(date, records) {
   } catch (err) {
     if (err.isAuthError) throw err;
     console.warn('Backend /api/upload failed, persisting to local storage:', err.message);
+    
+    // Substitutions fallback
     const all = getLocalRecords();
     const filtered = all.filter((r) => r.date !== date);
     const updated = [...filtered, ...records];
     saveLocalRecords(updated);
+
+    // Absences fallback
+    const allAbsences = getLocalAbsences();
+    const filteredAbsences = allAbsences.filter((a) => a.date !== date);
+    const updatedAbsences = [...filteredAbsences, ...absences];
+    saveLocalAbsences(updatedAbsences);
+
     return {
       success: true,
-      message: `Úspěšně uloženo ${records.length} záznamů pro datum ${date} (režim prohlížeče).`,
+      message: `Úspěšně uloženo ${records.length} suplování a ${absences.length} absencí pro datum ${date} (režim prohlížeče).`,
       count: records.length,
+      absencesCount: absences.length,
       date,
       isLocalFallback: true,
     };
@@ -266,10 +334,10 @@ export async function uploadRecords(date, records) {
 
 function getLocalStatsMock(startDate, endDate) {
   const allRecords = getLocalRecords();
-  const filtered = allRecords.filter((r) => r.date >= startDate && r.date <= endDate);
+  const filteredRecords = allRecords.filter((r) => r.date >= startDate && r.date <= endDate);
 
   const teacherMap = {};
-  filtered.forEach((r) => {
+  filteredRecords.forEach((r) => {
     if (!teacherMap[r.teacher_name]) {
       teacherMap[r.teacher_name] = {
         teacher_name: r.teacher_name,
@@ -299,17 +367,38 @@ function getLocalStatsMock(startDate, endDate) {
     totalDuties += s.duties_count;
   });
 
+  // Absences mock
+  const allAbsences = getLocalAbsences();
+  const filteredAbsences = allAbsences.filter((a) => a.date >= startDate && a.date <= endDate);
+
+  const reasonMap = {};
+  const teacherAbsenceMap = {};
+  filteredAbsences.forEach((a) => {
+    reasonMap[a.reason] = (reasonMap[a.reason] || 0) + 1;
+    teacherAbsenceMap[a.teacher_name] = (teacherAbsenceMap[a.teacher_name] || 0) + 1;
+  });
+
+  const byReason = Object.entries(reasonMap).map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count);
+  const byTeacher = Object.entries(teacherAbsenceMap).map(([teacher_name, count]) => ({ teacher_name, count })).sort((a, b) => b.count - a.count);
+
   return {
     success: true,
     startDate,
     endDate,
     summary,
-    records: filtered,
+    records: filteredRecords,
+    absences: filteredAbsences,
+    absenceSummary: {
+      totalAbsences: filteredAbsences.length,
+      byReason,
+      byTeacher,
+    },
     totals: {
       teachersCount: summary.length,
       totalHours,
       totalDuties,
       grandTotal: totalHours + totalDuties,
+      totalAbsences: filteredAbsences.length,
     },
     isLocalFallback: true,
   };

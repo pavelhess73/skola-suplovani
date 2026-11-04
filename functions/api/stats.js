@@ -1,7 +1,7 @@
 /**
  * Cloudflare Pages Function: /api/stats
  * Retrieves aggregated substitution and duty statistics for teachers within a date range,
- * along with detailed individual records.
+ * along with detailed individual records and teacher absences summary.
  */
 
 export async function onRequestGet(context) {
@@ -39,7 +39,7 @@ export async function onRequestGet(context) {
       );
     }
 
-    // 1. Fetch teacher summary
+    // 1. Fetch teacher substitution summary
     const summaryQuery = `
       SELECT 
         teacher_name,
@@ -55,7 +55,7 @@ export async function onRequestGet(context) {
     const summaryResult = await env.DB.prepare(summaryQuery).bind(startDate, endDate).all();
     const summary = summaryResult.results || [];
 
-    // 2. Fetch detailed records for the period
+    // 2. Fetch detailed substitution records for the period
     const detailsQuery = `
       SELECT 
         id,
@@ -75,7 +75,52 @@ export async function onRequestGet(context) {
     const detailsResult = await env.DB.prepare(detailsQuery).bind(startDate, endDate).all();
     const records = detailsResult.results || [];
 
-    // 3. Compute overall stats
+    // 3. Fetch absence records for the period
+    const absencesQuery = `
+      SELECT 
+        id,
+        date,
+        teacher_name,
+        reason,
+        time_range,
+        created_at
+      FROM absence_records
+      WHERE date >= ? AND date <= ?
+      ORDER BY date DESC, teacher_name ASC
+    `;
+
+    const absencesResult = await env.DB.prepare(absencesQuery).bind(startDate, endDate).all();
+    const absences = absencesResult.results || [];
+
+    // 4. Fetch absences grouped by reason
+    const reasonsQuery = `
+      SELECT 
+        reason,
+        COUNT(*) AS count
+      FROM absence_records
+      WHERE date >= ? AND date <= ?
+      GROUP BY reason
+      ORDER BY count DESC
+    `;
+
+    const reasonsResult = await env.DB.prepare(reasonsQuery).bind(startDate, endDate).all();
+    const absencesByReason = reasonsResult.results || [];
+
+    // 5. Fetch absences grouped by teacher
+    const teachersQuery = `
+      SELECT 
+        teacher_name,
+        COUNT(*) AS count
+      FROM absence_records
+      WHERE date >= ? AND date <= ?
+      GROUP BY teacher_name
+      ORDER BY count DESC, teacher_name ASC
+    `;
+
+    const teachersResult = await env.DB.prepare(teachersQuery).bind(startDate, endDate).all();
+    const absencesByTeacher = teachersResult.results || [];
+
+    // 6. Compute overall totals
     let totalHours = 0;
     let totalDuties = 0;
     summary.forEach((item) => {
@@ -90,11 +135,18 @@ export async function onRequestGet(context) {
         endDate,
         summary,
         records,
+        absences,
+        absenceSummary: {
+          totalAbsences: absences.length,
+          byReason: absencesByReason,
+          byTeacher: absencesByTeacher,
+        },
         totals: {
           teachersCount: summary.length,
           totalHours,
           totalDuties,
           grandTotal: totalHours + totalDuties,
+          totalAbsences: absences.length,
         },
       }),
       { status: 200, headers: corsHeaders }
@@ -121,4 +173,3 @@ export async function onRequestOptions() {
     },
   });
 }
-
