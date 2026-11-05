@@ -45,11 +45,17 @@ Pro lokální běh Cloudflare Pages Functions a lokální SQLite D1 databáze:
 ├── functions/
 │   └── api/
 │       ├── upload.js          # Cloudflare Pages Function: transakční zápis vyparsovaných dat
-│       └── stats.js           # Cloudflare Pages Function: agregace a filtrování statistik
+│       ├── stats.js           # Cloudflare Pages Function: agregace a filtrování statistik
+│       ├── fairplay.js       # Cloudflare Pages Function: žebříček zátěže učitelů pro férové přidělování
+│       └── analytics.js       # Cloudflare Pages Function: trendy absencí a statistika předmětů/tříd
 ├── migrations/
-│   └── 0001_init.sql          # D1 migrace (tabulka substitution_records + indexy)
+│   ├── 0001_init.sql          # D1 migrace (tabulka substitution_records + indexy)
+│   ├── 0002_absences.sql      # D1 migrace (tabulka absence_records)
+│   └── 0003_replacement_flag.sql # Podpora pro náhradní hodiny
 ├── src/
 │   ├── components/
+│   │   ├── Analytics.jsx      # Samostatný pohled s grafy Recharts (LineChart & BarChart)
+│   │   ├── FairPlayAssistant.jsx # Interaktivní widget doporučení kandidátů na dozor/suplování
 │   │   ├── FileUpload.jsx     # Drag & Drop nahrání .xlsx z EduPage s okamžitou odezvou
 │   │   ├── Navbar.jsx         # Horní lišta s navigací a indikátorem stavu
 │   │   ├── PeriodSelector.jsx # Volič období (týden, měsíc, školní rok, vlastní rozsah)

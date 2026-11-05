@@ -11,6 +11,7 @@ import {
   Sparkles,
   BarChart3
 } from 'lucide-react';
+import FairPlayAssistant from './FairPlayAssistant';
 
 /**
  * Renders tally marks (čárky) representation:
@@ -147,19 +148,51 @@ export default function StatsTable({ summary, records, totals, onSelectTeacher }
         </div>
       </div>
 
-      {/* Duty Balance Alert (Rovnoměrnost dozorů) */}
-      {maxDuties > 0 && topDutyTeachers.length > 0 && (
-        <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-l-4 border-amber-500 p-4 rounded-r-2xl flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-          <div className="text-sm">
-            <span className="font-bold text-amber-950">Kontrola rovnoměrnosti dozorů:</span>
-            <span className="text-amber-900 ml-1.5">
-              Nejvyšší počet dozorů v tomto období (<strong>{maxDuties}</strong>) má vyučující:{' '}
-              <strong className="text-amber-950">{topDutyTeachers.join(', ')}</strong>.
-            </span>
+      {/* Fair-Play Asistent & Kontrola rovnoměrnosti */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {maxDuties > 0 && topDutyTeachers.length > 0 ? (
+          <>
+            <div className="lg:col-span-5 flex flex-col justify-center bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-slate-50 border border-amber-300/80 rounded-2xl p-4 sm:p-5 shadow-xs">
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm shadow-amber-500/30">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-amber-950 text-sm">Kontrola rovnoměrnosti dozorů</span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-200/80 text-amber-900 border border-amber-300">
+                      Upozornění
+                    </span>
+                  </div>
+                  <p className="text-xs text-amber-900 mt-1.5 leading-relaxed">
+                    Nejvyšší počet dozorů v tomto období (<strong>{maxDuties}</strong>) má vyučující:{' '}
+                    <strong className="text-amber-950 font-black">{topDutyTeachers.join(', ')}</strong>.
+                  </p>
+                  <p className="text-[11px] text-amber-800/80 mt-2 font-medium">
+                    💡 Doporučujeme využít Fair-play asistenta a přidělit další dohledy pedagogům s nižší zátěží.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="lg:col-span-7">
+              <FairPlayAssistant
+                summary={summary}
+                records={records}
+                onSelectTeacher={onSelectTeacher}
+              />
+            </div>
+          </>
+        ) : (
+          <div className="lg:col-span-12">
+            <FairPlayAssistant
+              summary={summary}
+              records={records}
+              onSelectTeacher={onSelectTeacher}
+            />
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Main Table Card */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">

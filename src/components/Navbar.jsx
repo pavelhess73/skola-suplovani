@@ -1,5 +1,5 @@
 import React from 'react';
-import { CalendarClock, BarChart2, UploadCloud, RefreshCw, LogOut, UserX } from 'lucide-react';
+import { CalendarClock, BarChart2, UploadCloud, RefreshCw, LogOut, UserX, TrendingUp } from 'lucide-react';
 
 export default function Navbar({ activeTab, onTabChange, onRefresh, onLogout, loading }) {
   return (
@@ -60,6 +60,19 @@ export default function Navbar({ activeTab, onTabChange, onRefresh, onLogout, lo
               >
                 <UserX className="w-4 h-4 text-purple-600" />
                 <span>Absence</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onTabChange('analytics')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  activeTab === 'analytics'
+                    ? 'bg-white text-indigo-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+              >
+                <TrendingUp className="w-4 h-4 text-indigo-600" />
+                <span>Analytika</span>
               </button>
 
               <button

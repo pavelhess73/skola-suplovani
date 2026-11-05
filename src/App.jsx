@@ -3,6 +3,7 @@ import Navbar from './components/Navbar';
 import PeriodSelector from './components/PeriodSelector';
 import StatsTable from './components/StatsTable';
 import AbsencesView from './components/AbsencesView';
+import Analytics from './components/Analytics';
 import FileUpload from './components/FileUpload';
 import TeacherDetailModal from './components/TeacherDetailModal';
 import LoginScreen from './components/LoginScreen';
@@ -12,7 +13,7 @@ import { AlertCircle } from 'lucide-react';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => !!getAuthToken());
-  const [activeTab, setActiveTab] = useState('stats'); // 'stats' | 'absences' | 'upload'
+  const [activeTab, setActiveTab] = useState('stats'); // 'stats' | 'absences' | 'analytics' | 'upload'
   const [activeRange, setActiveRange] = useState(getThisWeekRange());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -142,8 +143,8 @@ export default function App() {
           </div>
         )}
 
-        {/* Period Selector (shared for Stats and Absences) */}
-        {(activeTab === 'stats' || activeTab === 'absences') && (
+        {/* Period Selector (shared for Stats, Absences, and Analytics) */}
+        {(activeTab === 'stats' || activeTab === 'absences' || activeTab === 'analytics') && (
           <PeriodSelector
             activeRange={activeRange}
             onRangeChange={handleRangeChange}
@@ -188,7 +189,12 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab 3: Upload */}
+        {/* Tab 3: Analytics (Analytika & Trendy) */}
+        {activeTab === 'analytics' && (
+          <Analytics activeRange={activeRange} />
+        )}
+
+        {/* Tab 4: Upload */}
         {activeTab === 'upload' && (
           <FileUpload
             onUploadSuccess={handleUploadSuccess}
